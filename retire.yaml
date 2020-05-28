@@ -1,0 +1,10 @@
+---
+- name: Retire VPC For OpenShift 4
+  hosts: localhost
+  vars_files:
+    - vars/us-east-1.yaml
+  roles:
+  - role: openshift-vpc-retire
+    vars:
+      region: "us-east-1"
+      prefix: "ckeller-openshift-vpn"

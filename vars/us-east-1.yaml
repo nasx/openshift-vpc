@@ -1,0 +1,64 @@
+---                                                                                                                                                                                                                   
+cidr_block: 10.0.0.0/16
+s3_endpoint: "com.amazonaws.us-east-1.s3"
+subnets:
+  - name: "{{ prefix }}-us-east-1a-private"
+    az: us-east-1a
+    cidr: 10.0.128.0/20
+    region: us-east-1
+    type: private
+  - name: "{{ prefix }}-us-east-1a-public"
+    az: us-east-1a
+    cidr: 10.0.0.0/20
+    region: us-east-1
+    type: public
+  - name: "{{ prefix }}-us-east-1b-private"
+    az: us-east-1b
+    cidr: 10.0.144.0/20
+    region: us-east-1
+    type: private
+  - name: "{{ prefix }}-us-east-1b-public"
+    az: us-east-1b
+    cidr: 10.0.16.0/20
+    region: us-east-1
+    type: public  
+  - name: "{{ prefix }}-us-east-1c-private"
+    az: us-east-1c
+    cidr: 10.0.160.0/20
+    region: us-east-1
+    type: private
+  - name: "{{ prefix }}-us-east-1c-public"
+    az: us-east-1c
+    cidr: 10.0.32.0/20
+    region: us-east-1
+    type: public
+  - name: "{{ prefix }}-us-east-1d-private"
+    az: us-east-1d
+    cidr: 10.0.176.0/20
+    region: us-east-1
+    type: private
+  - name: "{{ prefix }}-us-east-1d-public"
+    az: us-east-1d
+    cidr: 10.0.48.0/20
+    region: us-east-1
+    type: public
+  - name: "{{ prefix }}-us-east-1e-private"
+    az: us-east-1e
+    cidr: 10.0.192.0/20
+    region: us-east-1
+    type: private
+  - name: "{{ prefix }}-us-east-1e-public"
+    az: us-east-1e
+    cidr: 10.0.64.0/20
+    region: us-east-1
+    type: public
+  - name: "{{ prefix }}-us-east-1f-private"
+    az: us-east-1f
+    cidr: 10.0.208.0/20
+    region: us-east-1
+    type: private
+  - name: "{{ prefix }}-us-east-1f-public"
+    az: us-east-1f
+    cidr: 10.0.80.0/20
+    region: us-east-1
+    type: public

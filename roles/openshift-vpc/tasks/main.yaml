@@ -1,0 +1,284 @@
+---
+- name: Include Region Specific Vars
+  include_vars:
+    file: us-east-1.yaml
+  when: region == "us-east-1"
+
+- name: Create VPC {{ prefix }}
+  ec2_vpc_net:
+    region: "{{ region }}"
+    cidr_block: "{{ cidr_block }}"
+    dns_hostnames: yes
+    dns_support: yes
+    name: "{{ prefix }}"
+    state: present
+  register: vpc_results
+  until: vpc_results.failed is not defined or vpc_results.failed == false
+  retries: 3
+  delay: 5
+
+- name: Debug vpc_results
+  debug:
+    var: vpc_results
+    verbosity: 2
+
+- name: Create Subnets for VPC {{ prefix }}
+  ec2_vpc_subnet:
+    az: "{{ item.az }}"
+    cidr: "{{ item.cidr }}"
+    region: "{{ item.region }}"
+    state: present
+    tags:
+      Name: "{{ item.name }}"
+    vpc_id: "{{ vpc_results.vpc.id }}"
+  register: subnet_results
+  until: subnet_results.failed is not defined or subnet_results.failed == false
+  retries: 3
+  delay: 5
+  with_items:
+    - "{{ subnets }}"
+
+- name: Debug subnet_results
+  debug:
+    var: subnet_results
+    verbosity: 2
+
+- name: Query Private Subnet Info for VPC {{ prefix }}
+  ec2_vpc_subnet_info:
+    filters:
+      vpc-id: "{{ vpc_results.vpc.id }}"
+      "tag:Name": "{{ item.name }}"
+    region: "{{ region }}"
+  register: private_subnet_results
+  when: item.type == "private"
+  until: private_subnet_results.failed is not defined or private_subnet_results.failed == false
+  retries: 3
+  delay: 5
+  with_items:
+    - "{{ subnets }}"
+
+- name: Debug private_subnet_results
+  debug:
+    var: private_subnet_results
+    verbosity: 2
+
+- name: Define List of Private Subnet IDs + Name for VPC {{ prefix }}
+  set_fact:
+    private_subnet_info: >-
+      {{
+        private_subnet_info | default([]) +
+        [
+          {
+            'name': item.subnets[0].tags.Name,
+            'id': item.subnets[0].subnet_id
+          }
+        ]
+      }}
+  with_items:
+    - "{{ private_subnet_results.results }}"
+  when: item.skipped is not defined
+
+- name: Debug private_subnet_info
+  debug:
+    var: private_subnet_info
+    verbosity: 1
+
+
+- name: Query Public Subnet Info for VPC {{ prefix }}
+  ec2_vpc_subnet_info:
+    filters:
+      vpc-id: "{{ vpc_results.vpc.id }}"
+      "tag:Name": "{{ item.name }}"
+    region: "{{ region }}"
+  register: public_subnet_results
+  when: item.type == "public"
+  until: public_subnet_results.failed is not defined or public_subnet_results.failed == false
+  retries: 3
+  delay: 5
+  with_items:
+    - "{{ subnets }}"
+
+- name: Debug public_subnet_results
+  debug:
+    var: public_subnet_results
+    verbosity: 2
+
+- name: Define List of Public Subnet IDs + Name for VPC {{ prefix }}
+  set_fact:
+    public_subnet_info: >-
+      {{
+        public_subnet_info | default([]) +
+        [
+          {
+            'name': item.subnets[0].tags.Name,
+            'id': item.subnets[0].subnet_id
+          }
+        ]
+      }}
+  with_items:
+    - "{{ public_subnet_results.results }}"
+  when: item.skipped is not defined
+
+- name: Debug public_subnet_info
+  debug:
+    var: public_subnet_info
+    verbosity: 1
+
+- name: Define List of Public Subnet IDs for VPC {{ prefix }}
+  set_fact:
+    public_subnet_ids: "{{ public_subnet_ids | default([]) + [item.subnets[0].subnet_id] }}"
+  with_items:
+    - "{{ public_subnet_results.results }}"
+  when: item.skipped is not defined
+
+- name: Debug public_subnet_ids
+  debug:
+    var: public_subnet_ids
+    verbosity: 2
+
+- name: Create NAT Gateways for VPC {{ prefix }} Public Subnets
+  ec2_vpc_nat_gateway:
+    if_exist_do_not_create: true
+    region: "{{ region }}"
+    state: present
+    subnet_id: "{{ item.id }}"
+  register: ngw_results
+  until: ngw_results.failed is not defined or ngw_results.failed == false
+  retries: 3
+  delay: 5
+  with_items:
+    - "{{ public_subnet_info }}"
+
+- name: Debug ngw_results
+  debug:
+    var: ngw_results
+    verbosity: 2
+
+- name: Tag NAT Gateways for VPC {{ prefix }} Public Subnets
+  ec2_tag:
+    region: "{{ region }}"
+    resource: "{{ item.nat_gateway_id }}"
+    state: present
+    tags:
+      Name: "{{ item.item.name }}-ngw"
+  with_items:
+    - "{{ ngw_results.results }}"
+
+- name: Tag NAT Gateway EIPs for VPC {{ prefix }} Public Subnets
+  ec2_tag:
+    region: "{{ region }}"
+    resource: "{{ item.nat_gateway_addresses[0].allocation_id }}"
+    state: present
+    tags:
+      Name: "{{ item.item.name }}-ngw-eip"
+  with_items:
+    - "{{ ngw_results.results }}"
+
+- name: Create RTBs for VPC {{ prefix }} Private Subnets
+  ec2_vpc_route_table:
+    region: "{{ region }}"
+    routes:
+      - dest: 0.0.0.0/0
+        nat_gateway_id: "{{ item.1.nat_gateway_id }}"
+    state: present
+    subnets:
+      - "{{ item.0.id }}"
+    tags:
+      Name: "{{ item.0.name }}-rtb"
+    vpc_id: "{{ vpc_results.vpc.id }}"
+  register: private_rtb_results
+  with_together:
+    - "{{ private_subnet_info }}"
+    - "{{ ngw_results.results }}"
+
+- name: Debug private_rtb_results
+  debug:
+    var: private_rtb_results
+    verbosity: 2
+
+- name: Create Internet Gateway for VPC {{ prefix }} Public Subnets
+  ec2_vpc_igw:
+    region: "{{ region }}"
+    state: present
+    tags:
+      Name: "{{ prefix }}-igw"
+    vpc_id: "{{ vpc_results.vpc.id }}"
+  register: igw_results
+  until: igw_results.failed is not defined or igw_results.failed == false
+  retries: 3
+  delay: 5
+
+- name: Debug igw_results
+  debug:
+    var: igw_results
+    verbosity: 2
+
+- name: Create RTB for VPC {{ prefix }} Public Subnets
+  ec2_vpc_route_table:
+    purge_routes: false
+    region: "{{ region }}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{ igw_results.gateway_id }}"
+    state: present
+    subnets: "{{ public_subnet_ids }}"
+    tags:
+      Name: "{{ prefix }}-public-rtb"
+    vpc_id: "{{ vpc_results.vpc.id }}"
+  register: public_rtb_results
+
+- name: Debug public_rtb_results
+  debug:
+    var: public_rtb_results
+    verbosity: 2
+    
+- name: Query RTBs For VPC {{ prefix }} Private Subnets
+  ec2_vpc_route_table_info:
+    filters:
+      association.subnet-id: "{{ item.id }}"
+    region: "{{ region }}"
+  register: private_rtb_results
+  with_items:
+    - "{{ private_subnet_info }}"
+
+- name: Debug private_rtb_results
+  debug:
+    var: private_rtb_results
+    verbosity: 2
+
+- name: Add List of Private Route Table IDs for VPC {{ prefix }}
+  set_fact:
+    all_rtb_ids: "{{ all_rtb_ids | default([]) + [item.route_tables[0].id] }}"
+  with_items:
+    - "{{ private_rtb_results.results }}"
+
+- name: Add Public Route Table ID for VPC {{ prefix }}
+  set_fact:
+    all_rtb_ids: "{{ all_rtb_ids + [public_rtb_results.route_table.id] }}"
+
+- name: Debug all_rtb_ids
+  debug:
+    var: all_rtb_ids
+    verbosity: 2
+
+- name: Create S3 Endpoint for VPC {{ prefix }}
+  ec2_vpc_endpoint:
+    region: "{{ region }}"
+    route_table_ids: "{{ all_rtb_ids }}"
+    service: "{{ s3_endpoint }}"
+    state: present
+    vpc_id: "{{ vpc_results.vpc.id }}"
+  register: endpoint_results
+
+- name: Debug endpoint_results
+  debug:
+    var: endpoint_results
+    verbosity: 2
+
+- name: Tag S3 Endpoint for VPC {{ prefix }}
+  ec2_tag:
+    region: "{{ region }}"
+    resource: "{{ endpoint_results.result.vpc_endpoint_id }}"
+    state: present
+    tags:
+      Name: "{{ prefix }}-s3-endpoint"
