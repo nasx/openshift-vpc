@@ -78,11 +78,8 @@
     state: absent
     vpc_id: "{{ vpc_results.vpcs[0].vpc_id }}"
   loop: "{{ rtb_results.route_tables }}"
-#  with_items:
-#    - "{{ rtb_results.route_tables }}"
   when: 
     - (item.associations[0].main is not defined) or ((item.associations[0].main is defined) and (item.associations[0].main != true))
-  #when: item.associations[0].main is not defined
 
 - name: Query Subnets for VPC {{ prefix }}
   amazon.aws.ec2_vpc_subnet_info:
