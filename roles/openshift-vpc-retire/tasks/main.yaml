@@ -1,29 +1,28 @@
----
 - name: Query VPC ID for VPC {{ prefix }}
-  ec2_vpc_net_info:
+  amazon.aws.ec2_vpc_net_info:
     filters:
       "tag:Name": "{{ prefix }}"
     region: "{{ region }}"
   register: vpc_results
 
 - name: Debug vpc_results
-  debug:
+  ansible.builtin.debug:
     var: vpc_results
     verbosity: 2
       
 - name: Query NAT Gateways for VPC {{ prefix }}
-  ec2_vpc_nat_gateway_info:
+  amazon.aws.ec2_vpc_nat_gateway_info:
     filters:
       vpc-id: "{{ vpc_results.vpcs[0].vpc_id }}"
   register: ngw_results
 
 - name: Debug ngw_results
-  debug:
+  ansible.builtin.debug:
     var: ngw_results
     verbosity: 2
 
 - name: Delete VPC NAT Gateways for VPC {{ prefix }}
-  ec2_vpc_nat_gateway:
+  amazon.aws.ec2_vpc_nat_gateway:
     nat_gateway_id: "{{ item.nat_gateway_id }}"
     release_eip: true
     state: absent
@@ -32,13 +31,13 @@
     - "{{ ngw_results.result }}"
 
 - name: Delete VPC Internet Gateway for VPC {{ prefix }}
-  ec2_vpc_igw:
+  amazon.aws.ec2_vpc_igw:
     region: "{{ region }}"
     state: absent
     vpc_id: "{{ vpc_results.vpcs[0].vpc_id }}"
 
 - name: Query S3 Endpoint for VPC {{ prefix }}
-  ec2_vpc_endpoint_info:
+  amazon.aws.ec2_vpc_endpoint_info:
     filters:
       vpc-id: "{{ vpc_results.vpcs[0].vpc_id  }}"
     query: endpoints
@@ -46,12 +45,12 @@
   register: endpoint_results
 
 - name: Debug endpoint_results
-  debug:
+  ansible.builtin.debug:
     var: endpoint_results
     verbosity: 2
 
 - name: Delete Endpoint for VPC {{ prefix }}
-  ec2_vpc_endpoint:
+  amazon.aws.ec2_vpc_endpoint:
     region: "{{ region }}"
     state: absent
     vpc_endpoint_id: "{{ endpoint_results.vpc_endpoints[0].vpc_endpoint_id }}"
@@ -60,42 +59,45 @@
   when: endpoint_results.vpc_endpoints[0].vpc_endpoint_id is defined
 
 - name: Query RTBs for VPC {{ prefix }}
-  ec2_vpc_route_table_info:
+  community.aws.ec2_vpc_route_table_info:
     filters:
       vpc-id: "{{ vpc_results.vpcs[0].vpc_id }}"
     region: "{{ region }}"
   register: rtb_results
 
 - name: Debug rtb_results
-  debug:
+  ansible.builtin.debug:
     var: rtb_results
     verbosity: 2
 
 - name: Delete RTBs for VPC {{ prefix }}
-  ec2_vpc_route_table:
+  community.aws.ec2_vpc_route_table:
     lookup: id
     region: "{{ region }}"
     route_table_id: "{{ item.id }}"
     state: absent
     vpc_id: "{{ vpc_results.vpcs[0].vpc_id }}"
-  with_items:
-    - "{{ rtb_results.route_tables }}"
-  when: item.associations[0].main is defined and item.associations[0].main != true
+  loop: "{{ rtb_results.route_tables }}"
+#  with_items:
+#    - "{{ rtb_results.route_tables }}"
+  when: 
+    - (item.associations[0].main is not defined) or ((item.associations[0].main is defined) and (item.associations[0].main != true))
+  #when: item.associations[0].main is not defined
 
 - name: Query Subnets for VPC {{ prefix }}
-  ec2_vpc_subnet_info:
+  amazon.aws.ec2_vpc_subnet_info:
     filters:
       vpc-id: "{{ vpc_results.vpcs[0].vpc_id }}"
     region: "{{ region }}"
   register: subnet_results
 
 - name: Debug subnet_results
-  debug:
+  ansible.builtin.debug:
     var: subnet_results
     verbosity: 2
 
 - name: Delete Subnets for VPC {{ prefix }}
-  ec2_vpc_subnet:
+  amazon.aws.ec2_vpc_subnet:
     cidr: "{{ item.cidr_block }}"
     state: absent
     vpc_id: "{{ vpc_results.vpcs[0].vpc_id }}"
@@ -103,7 +105,7 @@
     - "{{ subnet_results.subnets }}"
 
 - name: Delete VPC {{ prefix }}
-  ec2_vpc_net:
+  amazon.aws.ec2_vpc_net:
     cidr_block: "{{ cidr_block }}"
     name: "{{ prefix }}"
     region: "{{ region }}"
